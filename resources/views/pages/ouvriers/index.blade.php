@@ -294,7 +294,9 @@
         <script src="{{ asset('js/pdf-lib.min.js') }}"></script>
         <script>
             (function () {
-                const BATCH = 10;
+                const MAX_BATCH_BYTES = 1.5 * 1024 * 1024;   // max size of one request
+                const MAX_BATCH_FILES = 10;                   // max files in one request
+
                 const input   = document.getElementById('bulkPdfFiles');
                 const form    = document.getElementById('bulkPdfForm');
                 const overlay = document.getElementById('uploadOverlay');
@@ -315,6 +317,36 @@
                     bar.style.width = p + '%';
                     pct.textContent = p + '%';
                     count.textContent = done + ' / ' + total + ' fichiers';
+                }
+
+                // Re-write the PDF in the classic format that the server can merge
+                async function normalizePdf(file) {
+                    try {
+                        const src = await PDFLib.PDFDocument.load(await file.arrayBuffer(), { ignoreEncryption: true });
+                        const out = await PDFLib.PDFDocument.create();
+                        const pages = await out.copyPages(src, src.getPageIndices());
+                        pages.forEach(p => out.addPage(p));
+                        const bytes = await out.save({ useObjectStreams: false });
+                        return new File([bytes], file.name, { type: 'application/pdf' });
+                    } catch (e) {
+                        return file; // could not be rewritten: send the original
+                    }
+                }
+
+                // Group files so that no request is bigger than MAX_BATCH_BYTES
+                function makeBatches(files) {
+                    const batches = [];
+                    let current = [], size = 0;
+                    for (const f of files) {
+                        if (current.length && (size + f.size > MAX_BATCH_BYTES || current.length >= MAX_BATCH_FILES)) {
+                            batches.push(current);
+                            current = []; size = 0;
+                        }
+                        current.push(f);
+                        size += f.size;
+                    }
+                    if (current.length) batches.push(current);
+                    return batches;
                 }
 
                 function sendBatch(files, token, onProgress) {
@@ -343,12 +375,8 @@
                 }
 
                 input.addEventListener('change', async () => {
-                    const files = Array.from(input.files);
-                    if (!files.length) return;
-
-                    const token = form.querySelector('input[name=_token]').value;
-                    const bytesTotal = files.reduce((s, f) => s + f.size, 0);
-                    let bytesDone = 0, filesDone = 0, ok = 0, errors = [];
+                    const rawFiles = Array.from(input.files);
+                    if (!rawFiles.length) return;
 
                     // reset + show overlay
                     overlay.classList.remove('hidden');
@@ -357,10 +385,22 @@
                     errBox.innerHTML = '';
                     spinner.classList.remove('hidden');
                     title.textContent = 'Importation des PDF personnels…';
+                    setProgress(0, rawFiles.length, 0, 1);
+
+                    // 1) prepare every PDF in the browser
+                    const files = [];
+                    for (let i = 0; i < rawFiles.length; i++) {
+                        status.textContent = 'Préparation des PDF… (' + (i + 1) + ' / ' + rawFiles.length + ')';
+                        files.push(await normalizePdf(rawFiles[i]));
+                    }
+
+                    // 2) upload in size-limited batches
+                    const token = form.querySelector('input[name=_token]').value;
+                    const bytesTotal = files.reduce((s, f) => s + f.size, 0);
+                    let bytesDone = 0, filesDone = 0, ok = 0, errors = [];
                     setProgress(0, files.length, 0, bytesTotal);
 
-                    for (let i = 0; i < files.length; i += BATCH) {
-                        const batch = files.slice(i, i + BATCH);
+                    for (const batch of makeBatches(files)) {
                         const batchBytes = batch.reduce((s, f) => s + f.size, 0);
                         status.textContent = 'Envoi des fichiers…';
 
@@ -380,7 +420,7 @@
                         setProgress(filesDone, files.length, bytesDone, bytesTotal);
                     }
 
-                    // finished
+                    // 3) finished
                     input.value = '';
                     spinner.classList.add('hidden');
                     title.textContent = 'Importation terminée';
