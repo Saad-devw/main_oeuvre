@@ -1,19 +1,23 @@
-@php
-$classes = $active
-    ? 'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-white'
-    : 'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors';
+@props(['active' => false, 'icon' => null])
 
-$iconColor = $active ? 'text-white' : 'text-gray-400 group-hover:text-gray-600';
+@php
+    $classes = $active
+        ? 'bg-white/15 text-white font-semibold'
+        : 'text-green-50/75 hover:bg-white/10 hover:text-white';
+
+    $iconClasses = $active
+        ? 'text-white'
+        : 'text-green-100/60 group-hover:text-white';
 @endphp
 
-<div class="py-1">
-    <a {{ $attributes->merge(['class' => $classes]) }}
-        @if($active) style="background: #1a6b3a;" @endif>
-        @if(isset($icon))
-            <span class="{{ $iconColor }} transition-colors shrink-0">
-                {{ $icon }}
-            </span>
-        @endif
-        <span>{{ $slot }}</span>
-    </a>
-</div>
+<a {{ $attributes->merge(['class' => "group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors $classes"]) }}>
+    @if ($active)
+        <span class="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full bg-white"></span>
+    @endif
+
+    <span class="w-5 flex items-center justify-center flex-shrink-0 {{ $iconClasses }}">
+        {{ $icon }}
+    </span>
+
+    <span class="truncate">{{ $slot }}</span>
+</a>

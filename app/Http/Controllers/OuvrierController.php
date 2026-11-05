@@ -82,8 +82,20 @@ class OuvrierController extends Controller
 
     public function index()
     {
-        $ouvriers = Ouvrier::orderBy('id', 'asc')->paginate(20);
-        return view('pages.ouvriers.index', compact('ouvriers'));
+        $ouvriers = Ouvrier::orderBy('full_name')->paginate(20);
+
+        // totals for the whole table, independent of the page
+        $counts = Ouvrier::selectRaw('gender, COUNT(*) as total')
+            ->groupBy('gender')
+            ->pluck('total', 'gender');
+
+        $stats = [
+            'total'  => $counts->sum(),
+            'hommes' => $counts['homme'] ?? 0,
+            'femmes' => $counts['femme'] ?? 0,
+        ];
+
+        return view('pages.ouvriers.index', compact('ouvriers', 'stats'));
     }
 
     public function create()

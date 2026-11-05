@@ -27,10 +27,7 @@
                 <div class="bg-white border border-gray-100 rounded-xl px-5 py-4 flex items-center gap-4 shadow-sm">
                     <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
                         style="background: #e6f4ed;">
-                        <svg class="w-5 h-5" style="color: #1a6b3a;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0" />
-                        </svg>
+                        <i class="fa fa-users text-green-700"></i>
                     </div>
                     <div>
                         <p class="text-2xl font-medium text-gray-900">{{ $ouvriers->total() }}</p>
@@ -46,7 +43,7 @@
                         </svg>
                     </div>
                     <div>
-                        <p class="text-2xl font-medium text-gray-900">{{ $ouvriers->where('gender', 'homme')->count() }}</p>
+                        <p class="text-2xl font-medium text-gray-900">{{ $stats['hommes'] }}</p>
                         <p class="text-xs text-gray-400 mt-0.5">Hommes</p>
                     </div>
                 </div>
@@ -59,7 +56,7 @@
                         </svg>
                     </div>
                     <div>
-                        <p class="text-2xl font-medium text-gray-900">{{ $ouvriers->where('gender', 'femme')->count() }}</p>
+                        <p class="text-2xl font-medium text-gray-900">{{ $stats['femmes'] }}</p>
                         <p class="text-xs text-gray-400 mt-0.5">Femmes</p>
                     </div>
                 </div>
@@ -84,7 +81,44 @@
             {{-- Table card --}}
             <div class="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
 
-                {{-- Toolbar --}}
+                {{-- Toolbar 1 --}}
+                <div class="flex items-center justify-between gap-3 px-5 py-3.5 mb-3 border-b border-gray-100">
+
+                    <form method="POST" action="{{ route('ouvriers.import') }}" id="importForm">
+                        @csrf
+                        {{-- no name attribute: the script sends the file itself --}}
+                        <input type="file" id="importFile" accept=".xlsx,.xls,.csv" class="hidden">
+                        <button type="button" onclick="document.getElementById('importFile').click()"
+                            class="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium text-white bg-blue-700 border border-blue-200 rounded-lg hover:text-blue-800 hover:bg-white transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                            Importer Liste des Oeuvriers (Liste Excel Totale)
+                        </button>
+                    </form>
+
+                    <form method="POST" action="{{ route('ouvriers.bulk-pdf') }}" id="bulkPdfForm">
+                        @csrf
+                        {{-- no name attribute: the script sends the files itself --}}
+                        <input type="file" id="bulkPdfFiles" accept="application/pdf" multiple class="hidden">
+                        <button type="button" onclick="document.getElementById('bulkPdfFiles').click()"
+                            class="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium text-white bg-purple-700 border border-purple-200 rounded-lg hover:text-purple-800 hover:bg-white transition-colors">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                            Importer Fichiers personnels (Liste PDF individuelle)
+                        </button>
+                        <br>
+                        <div class="mt-1 text-sm font-bold text-blue-500 flex items-center gap-1">
+                            <i class="fa fa-info-circle"></i>
+                            <small class="ml-2">Le nom de chaque PDF doit contenir le CIN de l'ouvrier.</small>
+                        </div>
+                    </form>
+                </div>
+
+                {{-- Toolbar 2 --}}
                 <div class="flex items-center gap-3 px-5 py-3.5 border-b border-gray-100">
                     <div class="relative max-w-xs flex-1">
                         <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" fill="none"
@@ -98,33 +132,7 @@
                             class="w-full pl-9 pr-3 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-700 placeholder-gray-400 focus:outline-none focus:border-gray-300 transition-colors">
                     </div>
 
-                    <form method="POST" action="{{ route('ouvriers.import') }}" id="importForm">
-                        @csrf
-                        {{-- no name attribute: the script sends the file itself --}}
-                        <input type="file" id="importFile" accept=".xlsx,.xls,.csv" class="hidden">
-                        <button type="button" onclick="document.getElementById('importFile').click()"
-                            class="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                            </svg>
-                            Importer Liste des Oeuvriers (excel)
-                        </button>
-                    </form>
 
-                    <form method="POST" action="{{ route('ouvriers.bulk-pdf') }}" id="bulkPdfForm">
-                        @csrf
-                        {{-- no name attribute: the script sends the files itself --}}
-                        <input type="file" id="bulkPdfFiles" accept="application/pdf" multiple class="hidden">
-                        <button type="button" onclick="document.getElementById('bulkPdfFiles').click()"
-                            class="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            Importer fichiers personnels
-                        </button>
-                    </form>
 
                     <a href="{{ route('documents.index') }}"
                         class="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium text-white rounded-lg ml-auto transition-colors"
