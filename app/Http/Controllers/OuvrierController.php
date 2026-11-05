@@ -23,6 +23,14 @@ class OuvrierController extends Controller
         $import = new OuvriersImport();
         Excel::import($import, $request->file('file'));
 
+        if ($request->expectsJson()) {
+            return response()->json([
+                'created' => $import->created,
+                'updated' => $import->updated,
+                'errors'  => $import->skipped,
+            ]);
+        }
+
         return redirect()->route('ouvriers.index')
             ->with('success', "{$import->created} ajouté(s), {$import->updated} mis à jour."
                 . (count($import->skipped) ? ' ' . count($import->skipped) . ' ligne(s) ignorée(s).' : ''))
@@ -61,6 +69,10 @@ class OuvrierController extends Controller
             }
             $ouvrier->update(['personal_pdf' => $path]);
             $ok++;
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => $ok, 'errors' => $errors]);
         }
 
         return redirect()->route('ouvriers.index')

@@ -98,27 +98,31 @@
                             class="w-full pl-9 pr-3 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg text-gray-700 placeholder-gray-400 focus:outline-none focus:border-gray-300 transition-colors">
                     </div>
 
-                    <form method="POST" action="{{ route('ouvriers.import') }}" enctype="multipart/form-data" id="importForm">
+                    <form method="POST" action="{{ route('ouvriers.import') }}" id="importForm">
                         @csrf
-                        <input type="file" name="file" id="importFile" accept=".xlsx,.xls,.csv" class="hidden"
-                            onchange="document.getElementById('importForm').submit()">
+                        {{-- no name attribute: the script sends the file itself --}}
+                        <input type="file" id="importFile" accept=".xlsx,.xls,.csv" class="hidden">
                         <button type="button" onclick="document.getElementById('importFile').click()"
                             class="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                     d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                             </svg>
-                            Importer Excel
+                            Importer Liste des Oeuvriers (excel)
                         </button>
                     </form>
 
-                    <form method="POST" action="{{ route('ouvriers.bulk-pdf') }}" enctype="multipart/form-data" id="bulkPdfForm">
+                    <form method="POST" action="{{ route('ouvriers.bulk-pdf') }}" id="bulkPdfForm">
                         @csrf
-                        <input type="file" name="files[]" id="bulkPdfFiles" accept="application/pdf" multiple class="hidden"
-                            onchange="document.getElementById('bulkPdfForm').submit()">
+                        {{-- no name attribute: the script sends the files itself --}}
+                        <input type="file" id="bulkPdfFiles" accept="application/pdf" multiple class="hidden">
                         <button type="button" onclick="document.getElementById('bulkPdfFiles').click()"
                             class="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-                            Importer PDF personnels
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Importer fichiers personnels
                         </button>
                     </form>
 
@@ -242,6 +246,37 @@
         </div>
     </div>
 
+    <div id="uploadOverlay" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+        <div class="w-full max-w-md bg-white rounded-xl shadow-xl p-6">
+            <div class="flex items-center gap-3 mb-4">
+                <svg id="upSpinner" class="w-5 h-5 animate-spin" style="color:#1a6b3a;" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                </svg>
+                <h3 id="upTitle" class="text-sm font-semibold text-gray-900">Importation des PDF personnels…</h3>
+            </div>
+
+            <div class="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                <div id="upBar" class="h-full rounded-full transition-all duration-200" style="width:0%; background:#1a6b3a;"></div>
+            </div>
+
+            <div class="flex items-center justify-between mt-2 text-xs text-gray-500">
+                <span id="upCount">0 / 0 fichiers</span>
+                <span id="upPct" class="font-mono">0%</span>
+            </div>
+            <p id="upStatus" class="mt-1 text-xs text-gray-400"></p>
+
+            <div id="upResult" class="hidden mt-4">
+                <p id="upSummary" class="text-sm font-medium text-green-700"></p>
+                <div id="upErrors" class="mt-2 max-h-40 overflow-y-auto text-xs text-amber-800 bg-amber-50 rounded-lg p-3 space-y-1 hidden"></div>
+                <button type="button" id="upClose"
+                    class="mt-4 w-full py-2 text-sm font-medium text-white rounded-lg" style="background:#1a6b3a;">
+                    Fermer
+                </button>
+            </div>
+        </div>
+    </div>
+
     @push('scripts')
         <script>
             const searchInput = document.getElementById('searchInput');
@@ -252,6 +287,214 @@
                     row.style.display = hit ? '' : 'none';
                 });
             });
+        </script>
+    @endpush
+
+    @push('scripts') <!-- CIN -->
+        <script src="{{ asset('js/pdf-lib.min.js') }}"></script>
+        <script>
+            (function () {
+                const BATCH = 10;
+                const input   = document.getElementById('bulkPdfFiles');
+                const form    = document.getElementById('bulkPdfForm');
+                const overlay = document.getElementById('uploadOverlay');
+                const bar     = document.getElementById('upBar');
+                const pct     = document.getElementById('upPct');
+                const count   = document.getElementById('upCount');
+                const status  = document.getElementById('upStatus');
+                const title   = document.getElementById('upTitle');
+                const spinner = document.getElementById('upSpinner');
+                const result  = document.getElementById('upResult');
+                const summary = document.getElementById('upSummary');
+                const errBox  = document.getElementById('upErrors');
+
+                document.getElementById('upClose').addEventListener('click', () => location.reload());
+
+                function setProgress(done, total, bytesDone, bytesTotal) {
+                    const p = bytesTotal ? Math.min(100, Math.round(bytesDone / bytesTotal * 100)) : 0;
+                    bar.style.width = p + '%';
+                    pct.textContent = p + '%';
+                    count.textContent = done + ' / ' + total + ' fichiers';
+                }
+
+                function sendBatch(files, token, onProgress) {
+                    return new Promise((resolve, reject) => {
+                        const fd = new FormData();
+                        fd.append('_token', token);
+                        files.forEach(f => fd.append('files[]', f));
+
+                        const xhr = new XMLHttpRequest();
+                        xhr.open('POST', form.action);
+                        xhr.setRequestHeader('Accept', 'application/json');
+                        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+                        xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded, e.total); };
+                        xhr.upload.onload = () => { status.textContent = 'Traitement des fichiers sur le serveur…'; };
+
+                        xhr.onload = () => {
+                            if (xhr.status === 413) return reject(new Error('fichiers trop volumineux pour le serveur'));
+                            if (xhr.status < 200 || xhr.status >= 300) return reject(new Error('erreur serveur ' + xhr.status));
+                            try { resolve(JSON.parse(xhr.responseText)); }
+                            catch (e) { reject(new Error('réponse invalide')); }
+                        };
+                        xhr.onerror = () => reject(new Error('connexion interrompue'));
+                        xhr.send(fd);
+                    });
+                }
+
+                input.addEventListener('change', async () => {
+                    const files = Array.from(input.files);
+                    if (!files.length) return;
+
+                    const token = form.querySelector('input[name=_token]').value;
+                    const bytesTotal = files.reduce((s, f) => s + f.size, 0);
+                    let bytesDone = 0, filesDone = 0, ok = 0, errors = [];
+
+                    // reset + show overlay
+                    overlay.classList.remove('hidden');
+                    result.classList.add('hidden');
+                    errBox.classList.add('hidden');
+                    errBox.innerHTML = '';
+                    spinner.classList.remove('hidden');
+                    title.textContent = 'Importation des PDF personnels…';
+                    setProgress(0, files.length, 0, bytesTotal);
+
+                    for (let i = 0; i < files.length; i += BATCH) {
+                        const batch = files.slice(i, i + BATCH);
+                        const batchBytes = batch.reduce((s, f) => s + f.size, 0);
+                        status.textContent = 'Envoi des fichiers…';
+
+                        try {
+                            const data = await sendBatch(batch, token, (loaded, total) => {
+                                const part = total ? loaded / total * batchBytes : 0;
+                                setProgress(filesDone, files.length, bytesDone + part, bytesTotal);
+                            });
+                            ok += data.ok;
+                            errors = errors.concat(data.errors);
+                        } catch (e) {
+                            batch.forEach(f => errors.push(f.name + ' : échec (' + e.message + ')'));
+                        }
+
+                        bytesDone += batchBytes;
+                        filesDone += batch.length;
+                        setProgress(filesDone, files.length, bytesDone, bytesTotal);
+                    }
+
+                    // finished
+                    input.value = '';
+                    spinner.classList.add('hidden');
+                    title.textContent = 'Importation terminée';
+                    status.textContent = '';
+                    summary.textContent = ok + ' PDF associé(s) sur ' + files.length + '.';
+                    result.classList.remove('hidden');
+
+                    if (errors.length) {
+                        errors.forEach(msg => {
+                            const p = document.createElement('p');
+                            p.textContent = '• ' + msg;
+                            errBox.appendChild(p);
+                        });
+                        errBox.classList.remove('hidden');
+                    }
+                });
+            })();
+        </script>
+    @endpush
+
+    @push('scripts')
+        <script>
+            (function () {
+                const input   = document.getElementById('importFile');
+                const form    = document.getElementById('importForm');
+                const overlay = document.getElementById('uploadOverlay');
+                const bar     = document.getElementById('upBar');
+                const pct     = document.getElementById('upPct');
+                const count   = document.getElementById('upCount');
+                const status  = document.getElementById('upStatus');
+                const title   = document.getElementById('upTitle');
+                const spinner = document.getElementById('upSpinner');
+                const result  = document.getElementById('upResult');
+                const summary = document.getElementById('upSummary');
+                const errBox  = document.getElementById('upErrors');
+
+                function setBar(p) {
+                    bar.style.width = p + '%';
+                    pct.textContent = p + '%';
+                }
+
+                function finish(message, isError, errors) {
+                    spinner.classList.add('hidden');
+                    bar.classList.remove('animate-pulse');
+                    title.textContent = isError ? 'Échec de l\'importation' : 'Importation terminée';
+                    status.textContent = '';
+                    summary.textContent = message;
+                    summary.className = 'text-sm font-medium ' + (isError ? 'text-red-600' : 'text-green-700');
+                    result.classList.remove('hidden');
+
+                    errBox.innerHTML = '';
+                    if (errors && errors.length) {
+                        errors.forEach(msg => {
+                            const p = document.createElement('p');
+                            p.textContent = '• ' + msg;
+                            errBox.appendChild(p);
+                        });
+                        errBox.classList.remove('hidden');
+                    }
+                }
+
+                input.addEventListener('change', () => {
+                    const file = input.files[0];
+                    if (!file) return;
+
+                    // reset + show overlay
+                    overlay.classList.remove('hidden');
+                    result.classList.add('hidden');
+                    errBox.classList.add('hidden');
+                    spinner.classList.remove('hidden');
+                    title.textContent = 'Importation de la liste des ouvriers…';
+                    count.textContent = file.name;
+                    status.textContent = 'Envoi du fichier…';
+                    setBar(0);
+
+                    const fd = new FormData();
+                    fd.append('_token', form.querySelector('input[name=_token]').value);
+                    fd.append('file', file);
+
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', form.action);
+                    xhr.setRequestHeader('Accept', 'application/json');
+                    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+
+                    xhr.upload.onprogress = e => {
+                        if (e.lengthComputable) setBar(Math.round(e.loaded / e.total * 100));
+                    };
+                    xhr.upload.onload = () => {
+                        setBar(100);
+                        bar.classList.add('animate-pulse');
+                        status.textContent = 'Lecture et enregistrement des ouvriers…';
+                    };
+
+                    xhr.onload = () => {
+                        input.value = '';
+                        let data = {};
+                        try { data = JSON.parse(xhr.responseText); } catch (e) {}
+
+                        if (xhr.status === 422) {
+                            const msg = data.errors && data.errors.file ? data.errors.file[0] : 'Fichier invalide.';
+                            return finish(msg, true, []);
+                        }
+                        if (xhr.status === 413) return finish('Fichier trop volumineux pour le serveur.', true, []);
+                        if (xhr.status < 200 || xhr.status >= 300) return finish('Erreur serveur (' + xhr.status + ').', true, []);
+
+                        finish(data.created + ' ajouté(s), ' + data.updated + ' mis à jour.'
+                            + (data.errors.length ? ' ' + data.errors.length + ' ligne(s) ignorée(s).' : ''),
+                            false, data.errors);
+                    };
+                    xhr.onerror = () => { input.value = ''; finish('Connexion interrompue.', true, []); };
+
+                    xhr.send(fd);
+                });
+            })();
         </script>
     @endpush
 
