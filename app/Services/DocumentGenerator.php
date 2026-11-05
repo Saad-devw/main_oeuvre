@@ -12,6 +12,9 @@ use setasign\Fpdi\PdfParser\StreamReader;
 
 class DocumentGenerator
 {
+    /** Number of workers per PDF file (lower it if memory errors persist). */
+    private const CHUNK = 12;
+
     private string $tempDir;
 
     public function __construct()
@@ -23,30 +26,69 @@ class DocumentGenerator
     }
 
     /**
-     * Generate ONE pdf for all selected ouvriers.
-     * For each ouvrier: CRPS + Lettre d'engagement + Etat d'engagement + personal PDF (if any).
+     * Returns the path of a single .pdf (12 workers or fewer)
+     * or of a .zip containing several PDF parts.
      */
-    public function generatePdf(Document $generation): string
+    public function generate(Document $generation): string
+    {
+        $workers = $generation->ouvriers->sortBy('full_name')->values();
+        $chunks  = $workers->chunk(self::CHUNK);
+        $base    = 'documents_' . $generation->start_date->format('m_Y') . '_' . $generation->id;
+
+        if ($chunks->count() <= 1) {
+            return $this->buildPdf($workers, $generation, $base . '.pdf');
+        }
+
+        $zipPath = $this->tempDir . '/' . $base . '.zip';
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            throw new \RuntimeException("Impossible de créer l'archive zip.");
+        }
+
+        $parts = [];
+        foreach ($chunks as $i => $chunk) {
+            $name    = $base . '_partie' . ($i + 1) . '.pdf';
+            $path    = $this->buildPdf($chunk->values(), $generation, $name);
+            $parts[] = $path;
+            $zip->addFile($path, $name);
+            gc_collect_cycles();
+        }
+
+        $zip->close();
+
+        foreach ($parts as $p) {
+            @unlink($p);
+        }
+
+        return $zipPath;
+    }
+
+    /**
+     * One PDF for a group of workers:
+     * CRPS + Lettre d'engagement + Etat d'engagement + personal PDF, for each worker.
+     */
+    private function buildPdf($workers, Document $generation, string $fileName): string
     {
         $fpdi = new Fpdi();
 
-        foreach ($generation->ouvriers as $ouvrier) {
-            // 3 generated pages (Blade -> dompdf)
+        foreach ($workers as $ouvrier) {
             $pages = Pdf::loadView('pdf.worker_pages', $this->buildData($ouvrier, $generation))
                 ->setPaper('a4')
                 ->output();
             $this->appendPdf($fpdi, StreamReader::createByString($pages));
+            unset($pages);
 
-            // Personal documents (uploaded PDF)
             if ($ouvrier->personal_pdf && Storage::disk('local')->exists($ouvrier->personal_pdf)) {
                 $this->appendPersonalPdf($fpdi, $ouvrier->personal_pdf, $ouvrier->full_name);
             }
+
+            gc_collect_cycles();
         }
 
-        $path = $this->tempDir . '/documents_'
-            . $generation->start_date->format('m_Y') . '_' . $generation->id . '.pdf';
-
+        $path = $this->tempDir . '/' . $fileName;
         $fpdi->Output('F', $path);
+        unset($fpdi);
+        gc_collect_cycles();
 
         return $path;
     }
@@ -69,7 +111,7 @@ class DocumentGenerator
 
     /**
      * Merge the worker's personal PDF. If FPDI can't read it (newer compression),
-     * re-write it as PDF 1.4 with Ghostscript and retry.
+     * re-write it as PDF 1.4 with Ghostscript (when available) and retry.
      */
     private function appendPersonalPdf(Fpdi $fpdi, string $relativePath, string $workerName): void
     {
@@ -101,6 +143,10 @@ class DocumentGenerator
 
     private function convertWithGhostscript(string $input): ?string
     {
+        if (!function_exists('exec')) {
+            return null;
+        }
+
         $bin = config('services.ghostscript.path')
             ?: (PHP_OS_FAMILY === 'Windows' ? 'gswin64c' : 'gs');
         $out = $this->tempDir . '/gs_' . uniqid() . '.pdf';
@@ -112,7 +158,7 @@ class DocumentGenerator
             escapeshellarg($input)
         );
 
-        exec($cmd, $output, $code);
+        @exec($cmd, $output, $code);
 
         return ($code === 0 && file_exists($out)) ? $out : null;
     }

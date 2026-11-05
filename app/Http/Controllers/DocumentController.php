@@ -19,6 +19,10 @@ class DocumentController extends Controller
 
     public function generate(Request $request)
     {
+        // Generating many PDFs needs more time and memory than the defaults
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(0);
+
         $request->validate([
             'start_date'     => ['required', 'date'],
             'end_date'       => ['required', 'date', 'after_or_equal:start_date'],
@@ -72,18 +76,27 @@ class DocumentController extends Controller
             ]);
         }
 
-        // 2) Generate the single PDF (3 pages + personal PDF for each worker)
+        // 2) Generate the file (one PDF, or a zip of PDF parts for many workers)
         try {
-            $pdfPath = (new DocumentGenerator())->generatePdf($generation);
-            $generation->update(['zip_filename' => basename($pdfPath)]);
+            $path = (new DocumentGenerator())->generate($generation);
+            $generation->update(['zip_filename' => basename($path)]);
         } catch (\Throwable $e) {
             return back()->withInput()->withErrors([
                 'general' => $e->getMessage() . ' (Session enregistrée #' . $generation->id . ')',
             ]);
         }
 
-        return response()->download($pdfPath, basename($pdfPath), [
-            'Content-Type' => 'application/pdf',
-        ])->deleteFileAfterSend(true);
+        $mime = str_ends_with($path, '.zip') ? 'application/zip' : 'application/pdf';
+
+        $response = response()->download($path, basename($path), ['Content-Type' => $mime])
+            ->deleteFileAfterSend(true);
+
+        // Tells the browser (loader) that the download has started
+        $token = preg_replace('/[^A-Za-z0-9]/', '', (string) $request->input('dl_token'));
+        if ($token !== '') {
+            $response->headers->setCookie(cookie('dl_' . $token, '1', 1, '/', null, false, false));
+        }
+
+        return $response;
     }
 }

@@ -31,6 +31,8 @@
                     <form method="POST" action="{{ route('documents.generate') }}" id="generateForm">
                         @csrf
 
+                        <input type="hidden" name="dl_token" id="dlToken">
+
                         {{-- Paramètres de la période --}}
                         <div class="bg-white border border-gray-100 rounded-xl shadow-sm p-6">
                             <h2 class="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
@@ -276,8 +278,38 @@
         </div>
     </div>
 
+    <div id="genOverlay" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+        <div class="w-full max-w-sm bg-white rounded-xl shadow-xl p-6 text-center">
+            <svg class="w-10 h-10 mx-auto animate-spin" style="color:#1a6b3a;" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+            </svg>
+            <h3 class="mt-4 text-sm font-semibold text-gray-900">Génération des documents en cours…</h3>
+            <p class="mt-1 text-xs text-gray-500">
+                <span id="genCount">0</span> ouvrier(s) sélectionné(s). Cela peut prendre quelques minutes, ne fermez pas la page.
+            </p>
+        </div>
+    </div>
+
     @push('scripts')
         <script>
+            // ── Téléchargement des documents ───────────────────────────────
+            document.getElementById('generateForm').addEventListener('submit', function () {
+                const token = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+                document.getElementById('dlToken').value = token;
+                document.getElementById('genCount').textContent = document.querySelectorAll('.emp-checkbox:checked').length;
+                document.getElementById('genOverlay').classList.remove('hidden');
+
+                // the server sets a cookie "dl_<token>" when the file starts downloading
+                const timer = setInterval(() => {
+                    if (document.cookie.split('; ').some(c => c.startsWith('dl_' + token + '='))) {
+                        clearInterval(timer);
+                        document.getElementById('genOverlay').classList.add('hidden');
+                        document.cookie = 'dl_' + token + '=; Max-Age=0; path=/';
+                    }
+                }, 500);
+            });
+
             // ── Calcul salaire ──────────────────────────────────────────
             function updateCalc() {
                 const price = parseFloat(document.getElementById('price_per_day').value);
