@@ -78,7 +78,7 @@ class DocumentController extends Controller
 
         // 2) Generate the file (one PDF, or a zip of PDF parts for many workers)
         try {
-            $path = (new DocumentGenerator())->generate($generation);
+            $path = (new DocumentGenerator())->generate($generation, array_map('intval', $request->employee_ids));
             $generation->update(['zip_filename' => basename($path)]);
         } catch (\Throwable $e) {
             return back()->withInput()->withErrors([

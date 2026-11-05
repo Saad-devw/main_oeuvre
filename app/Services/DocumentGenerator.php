@@ -29,11 +29,14 @@ class DocumentGenerator
      * Returns the path of a single .pdf (12 workers or fewer)
      * or of a .zip containing several PDF parts.
      */
-    public function generate(Document $generation): string
+    public function generate(Document $generation, array $orderedIds): string
     {
-        $workers = $generation->ouvriers->sortBy('full_name')->values();
-        $chunks  = $workers->chunk(self::CHUNK);
-        $base    = 'documents_' . $generation->start_date->format('m_Y') . '_' . $generation->id;
+        $workers = Ouvrier::whereIn('id', $orderedIds)->get()
+        ->sortBy(fn ($o) => array_search($o->id, $orderedIds))
+        ->values();
+
+        $chunks = $workers->chunk(self::CHUNK);
+        $base   = 'documents_' . $generation->start_date->format('m_Y') . '_' . $generation->id;
 
         if ($chunks->count() <= 1) {
             return $this->buildPdf($workers, $generation, $base . '.pdf');
@@ -47,7 +50,7 @@ class DocumentGenerator
 
         $parts = [];
         foreach ($chunks as $i => $chunk) {
-            $name    = $base . '_partie' . ($i + 1) . '.pdf';
+            $name = $base . '_partie' . str_pad($i + 1, 2, '0', STR_PAD_LEFT) . '.pdf';
             $path    = $this->buildPdf($chunk->values(), $generation, $name);
             $parts[] = $path;
             $zip->addFile($path, $name);
