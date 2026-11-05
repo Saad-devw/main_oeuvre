@@ -82,7 +82,7 @@ class OuvrierController extends Controller
 
     public function index()
     {
-        $ouvriers = Ouvrier::orderBy('full_name')->paginate(20);
+        $ouvriers = Ouvrier::orderBy('id')->paginate(20);
 
         // totals for the whole table, independent of the page
         $counts = Ouvrier::selectRaw('gender, COUNT(*) as total')
