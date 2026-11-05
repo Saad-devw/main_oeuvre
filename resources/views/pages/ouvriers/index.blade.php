@@ -112,6 +112,16 @@
                         </button>
                     </form>
 
+                    <form method="POST" action="{{ route('ouvriers.bulk-pdf') }}" enctype="multipart/form-data" id="bulkPdfForm">
+                        @csrf
+                        <input type="file" name="files[]" id="bulkPdfFiles" accept="application/pdf" multiple class="hidden"
+                            onchange="document.getElementById('bulkPdfForm').submit()">
+                        <button type="button" onclick="document.getElementById('bulkPdfFiles').click()"
+                            class="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                            Importer PDF personnels
+                        </button>
+                    </form>
+
                     <a href="{{ route('documents.index') }}"
                         class="inline-flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium text-white rounded-lg ml-auto transition-colors"
                         style="background: #1a6b3a;">

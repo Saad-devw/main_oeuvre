@@ -6,6 +6,8 @@ use App\Models\Ouvrier;
 use App\Imports\OuvriersImport;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use App\Services\PdfNormalizer;
 
 class OuvrierController extends Controller
 {
@@ -25,6 +27,45 @@ class OuvrierController extends Controller
             ->with('success', "{$import->created} ajouté(s), {$import->updated} mis à jour."
                 . (count($import->skipped) ? ' ' . count($import->skipped) . ' ligne(s) ignorée(s).' : ''))
             ->with('import_errors', $import->skipped);
+    }
+
+    public function bulkPdf(Request $request)
+    {
+        $request->validate([
+            'files'   => 'required|array',
+            'files.*' => 'file|mimes:pdf|max:10240',
+        ]);
+
+        $ok = 0;
+        $errors = [];
+
+        foreach ($request->file('files') as $file) {
+            $name = $file->getClientOriginalName();
+            $cin  = strtoupper(pathinfo($name, PATHINFO_FILENAME));
+
+            $ouvrier = Ouvrier::where('cin', $cin)->first();
+            if (!$ouvrier) {
+                $errors[] = "{$name} : aucun ouvrier avec le CIN {$cin}";
+                continue;
+            }
+
+            $path = $file->store('ouvriers', 'local');
+            if (!PdfNormalizer::ensureReadable(Storage::disk('local')->path($path))) {
+                Storage::disk('local')->delete($path);
+                $errors[] = "{$name} : PDF illisible (conversion impossible)";
+                continue;
+            }
+
+            if ($ouvrier->personal_pdf) {
+                Storage::disk('local')->delete($ouvrier->personal_pdf);
+            }
+            $ouvrier->update(['personal_pdf' => $path]);
+            $ok++;
+        }
+
+        return redirect()->route('ouvriers.index')
+            ->with('success', "{$ok} PDF associé(s).")
+            ->with('import_errors', $errors);
     }
 
     public function index()
@@ -54,10 +95,19 @@ class OuvrierController extends Controller
         $data['cin']       = strtoupper($data['cin']);
 
         if ($request->hasFile('personal_pdf')) {
-            if (isset($ouvrier) && $ouvrier->personal_pdf) {
-                \Storage::disk('local')->delete($ouvrier->personal_pdf);
+            $path = $request->file('personal_pdf')->store('ouvriers', 'local');
+
+            if (!PdfNormalizer::ensureReadable(Storage::disk('local')->path($path))) {
+                Storage::disk('local')->delete($path);
+                return back()->withInput()->withErrors([
+                    'personal_pdf' => "Ce PDF n'est pas lisible. Réenregistrez-le avec « Imprimer en PDF » puis réessayez.",
+                ]);
             }
-            $data['personal_pdf'] = $request->file('personal_pdf')->store('ouvriers', 'local');
+
+            if (isset($ouvrier) && $ouvrier->personal_pdf) {   // update only
+                Storage::disk('local')->delete($ouvrier->personal_pdf);
+            }
+            $data['personal_pdf'] = $path;
         } else {
             unset($data['personal_pdf']);
         }
@@ -89,10 +139,19 @@ class OuvrierController extends Controller
         $data['cin']       = strtoupper($data['cin']);
 
         if ($request->hasFile('personal_pdf')) {
-            if (isset($ouvrier) && $ouvrier->personal_pdf) {
-                \Storage::disk('local')->delete($ouvrier->personal_pdf);
+            $path = $request->file('personal_pdf')->store('ouvriers', 'local');
+
+            if (!PdfNormalizer::ensureReadable(Storage::disk('local')->path($path))) {
+                Storage::disk('local')->delete($path);
+                return back()->withInput()->withErrors([
+                    'personal_pdf' => "Ce PDF n'est pas lisible. Réenregistrez-le avec « Imprimer en PDF » puis réessayez.",
+                ]);
             }
-            $data['personal_pdf'] = $request->file('personal_pdf')->store('ouvriers', 'local');
+
+            if (isset($ouvrier) && $ouvrier->personal_pdf) {   // update only
+                Storage::disk('local')->delete($ouvrier->personal_pdf);
+            }
+            $data['personal_pdf'] = $path;
         } else {
             unset($data['personal_pdf']);
         }

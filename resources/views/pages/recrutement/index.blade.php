@@ -23,7 +23,11 @@
 
                 {{-- Left: Form --}}
                 <div class="col-span-3 space-y-5">
-
+                    @if ($errors->has('general'))
+                        <div class="mb-4 px-4 py-3 text-sm rounded-lg bg-red-50 text-red-700">
+                            {{ $errors->first('general') }}
+                        </div>
+                    @endif
                     <form method="POST" action="{{ route('documents.generate') }}" id="generateForm">
                         @csrf
 

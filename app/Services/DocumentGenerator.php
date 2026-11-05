@@ -39,15 +39,7 @@ class DocumentGenerator
 
             // Personal documents (uploaded PDF)
             if ($ouvrier->personal_pdf && Storage::disk('local')->exists($ouvrier->personal_pdf)) {
-                try {
-                    $this->appendPdf($fpdi, StreamReader::createByString(
-                        Storage::disk('local')->get($ouvrier->personal_pdf)
-                    ));
-                } catch (\Throwable $e) {
-                    throw new \RuntimeException(
-                        "Le PDF personnel de {$ouvrier->full_name} n'a pas pu être fusionné."
-                    );
-                }
+                $this->appendPersonalPdf($fpdi, $ouvrier->personal_pdf, $ouvrier->full_name);
             }
         }
 
@@ -76,13 +68,62 @@ class DocumentGenerator
     }
 
     /**
+     * Merge the worker's personal PDF. If FPDI can't read it (newer compression),
+     * re-write it as PDF 1.4 with Ghostscript and retry.
+     */
+    private function appendPersonalPdf(Fpdi $fpdi, string $relativePath, string $workerName): void
+    {
+        try {
+            $this->appendPdf($fpdi, StreamReader::createByString(
+                Storage::disk('local')->get($relativePath)
+            ));
+            return;
+        } catch (\Throwable $first) {
+            $converted = $this->convertWithGhostscript(Storage::disk('local')->path($relativePath));
+
+            if (!$converted) {
+                throw new \RuntimeException(
+                    "Le PDF personnel de {$workerName} n'a pas pu être fusionné : " . $first->getMessage()
+                );
+            }
+
+            try {
+                $this->appendPdf($fpdi, StreamReader::createByString(file_get_contents($converted)));
+            } catch (\Throwable $second) {
+                throw new \RuntimeException(
+                    "Le PDF personnel de {$workerName} n'a pas pu être fusionné : " . $second->getMessage()
+                );
+            } finally {
+                @unlink($converted);
+            }
+        }
+    }
+
+    private function convertWithGhostscript(string $input): ?string
+    {
+        $bin = config('services.ghostscript.path')
+            ?: (PHP_OS_FAMILY === 'Windows' ? 'gswin64c' : 'gs');
+        $out = $this->tempDir . '/gs_' . uniqid() . '.pdf';
+
+        $cmd = sprintf(
+            '%s -q -dNOPAUSE -dBATCH -dSAFER -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -sOutputFile=%s %s 2>&1',
+            escapeshellarg($bin),
+            escapeshellarg($out),
+            escapeshellarg($input)
+        );
+
+        exec($cmd, $output, $code);
+
+        return ($code === 0 && file_exists($out)) ? $out : null;
+    }
+
+    /**
      * Data passed to resources/views/pdf/worker_pages.blade.php
      */
     private function buildData(Ouvrier $o, Document $g): array
     {
-        // $f = fn ($v) => number_format((float) $v, 2, ',', ' ');
         $f = fn ($v) => number_format((float) $v, 2, ',', "\u{00A0}");
-        
+
         return [
             'name'     => strtoupper($o->full_name),
             'civility' => $o->gender === 'femme' ? 'MME' : 'MR',

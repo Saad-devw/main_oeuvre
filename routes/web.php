@@ -22,6 +22,9 @@ Route::get('/dashboard', function () {
 
 Route::middleware('auth')->group(function () {
     Route::post('ouvriers/import', [OuvrierController::class, 'import'])->name('ouvriers.import');
+
+    Route::post('ouvriers/bulk-pdf', [OuvrierController::class, 'bulkPdf'])->name('ouvriers.bulk-pdf');
+    
     Route::resource('ouvriers', OuvrierController::class);
 
     // Employees CRUD
